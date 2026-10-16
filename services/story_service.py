@@ -8,32 +8,30 @@ from config import Config
 from db import get_db
 
 class StoryService:
+    
     @staticmethod
     def get_story_list(user_id: int, page: int = 1, page_size: int = 10, source_type: str = None):
         """
-        5.1 分页获取文章列表
+        5.1
+        分页获取文章列表（携带当前用户的完读打卡状态）
         """
         offset = (page - 1) * page_size
+        where_clauses = ["(s.user_id = %s OR s.source_type = 'builtin')"]
+        where_params = [user_id]
+
+        if source_type:
+            where_clauses.append("s.source_type = %s")
+            where_params.append(source_type)
+
+        where_sql = " AND ".join(where_clauses)
+
         with get_db() as cursor:
-            # 查出当前用户主修词书
-            cursor.execute("SELECT current_book_id FROM users WHERE id = %s;", (user_id,))
-            user = cursor.fetchone()
-            book_id = user["current_book_id"] if user else "CET6luan_1"
-
-            where_clauses = ["(s.user_id = %s OR s.source_type = 'builtin')"]
-            params = [user_id]
-
-            if source_type:
-                where_clauses.append("s.source_type = %s")
-                params.append(source_type)
-
-            where_sql = " AND ".join(where_clauses)
-
-            # 1. 统计总数
-            cursor.execute(f"SELECT COUNT(*) AS total FROM stories s WHERE {where_sql};", params)
+            # 1. 统计文章总数
+            count_sql = f"SELECT COUNT(*) AS total FROM stories s WHERE {where_sql};"
+            cursor.execute(count_sql, tuple(where_params))
             total = cursor.fetchone()["total"]
 
-            # 2. 分页查列表
+            # 2. 查询列表：注意参数顺序依次为 -> join绑定的user_id -> where条件参数 -> 分页参数
             sql = f"""
                 SELECT 
                     s.id AS story_id,
@@ -42,13 +40,23 @@ class StoryService:
                     s.target_book_id,
                     s.word_count,
                     s.embedded_word_count,
-                    s.created_at
+                    s.created_at,
+                    COALESCE(usr.is_completed, 0) AS is_completed,
+                    usr.last_practice_score
                 FROM stories s
+                LEFT JOIN user_story_records usr 
+                    ON usr.story_id = s.id AND usr.user_id = %s
                 WHERE {where_sql}
-                ORDER BY s.created_at DESC
+                ORDER BY s.id ASC
                 LIMIT %s OFFSET %s;
             """
-            cursor.execute(sql, params + [page_size, offset])
+            
+            # 严格按照 SQL 中 %s 出现的先后顺序组装参数列表：
+            # 1. usr.user_id = %s
+            # 2. WHERE ... %s
+            # 3. LIMIT %s OFFSET %s
+            exec_params = [user_id] + where_params + [page_size, offset]
+            cursor.execute(sql, tuple(exec_params))
             rows = cursor.fetchall()
 
             stories = []
@@ -57,8 +65,11 @@ class StoryService:
                     "story_id": r["story_id"],
                     "title": r["title"],
                     "source_type": r["source_type"],
+                    "target_book_id": r["target_book_id"],
                     "word_count": r["word_count"],
                     "embedded_word_count": r["embedded_word_count"],
+                    "is_completed": bool(r["is_completed"]),
+                    "last_practice_score": r["last_practice_score"],
                     "created_at": r["created_at"].strftime('%Y-%m-%d %H:%M:%S') if r["created_at"] else ""
                 })
 
@@ -69,6 +80,8 @@ class StoryService:
                 "list": stories
             }
 
+
+    
     @staticmethod
     def get_story_detail(user_id: int, story_id: int):
         """
@@ -82,13 +95,16 @@ class StoryService:
             # 1. 查询文章基础内容
             sql_story = """
                 SELECT 
-                    id AS story_id, title, source_type, target_book_id,
-                    original_content, processed_content, word_count, embedded_word_count
-                FROM stories
-                WHERE id = %s AND (user_id = %s OR source_type = 'builtin')
+                    s.id AS story_id, s.title, s.source_type, s.target_book_id,
+                    s.original_content, s.processed_content, s.word_count, s.embedded_word_count,
+                    COALESCE(usr.is_completed, 0) AS is_completed
+                FROM stories s
+                LEFT JOIN user_story_records usr
+                    ON usr.story_id = s.id AND usr.user_id = %s
+                WHERE s.id = %s AND (s.user_id = %s OR s.source_type = 'builtin')
                 LIMIT 1;
             """
-            cursor.execute(sql_story, (story_id, user_id))
+            cursor.execute(sql_story, (user_id, story_id, user_id))
             story = cursor.fetchone()
             if not story:
                 return False, "文章不存在或无权访问", None
@@ -132,6 +148,7 @@ class StoryService:
                 "story_id": story["story_id"],
                 "title": story["title"],
                 "source_type": story["source_type"],
+                "is_completed": bool(story["is_completed"]),
                 "processed_content": story["processed_content"] or story["original_content"],
                 "embedded_words": embedded_words
             }
@@ -139,14 +156,38 @@ class StoryService:
     @staticmethod
     def complete_story(user_id: int, story_id: int):
         """
-        5.3 完成文章阅读打卡：更新今日 user_study_stats 的 read_story_count
+        5.3 手动标记已阅读，仅首次完读时增加当日阅读数。
         """
         today = datetime.now().date()
         with get_db() as cursor:
             # 确认文章有效性
-            cursor.execute("SELECT id FROM stories WHERE id = %s;", (story_id,))
+            cursor.execute("""
+                SELECT id FROM stories
+                WHERE id = %s AND (user_id = %s OR source_type = 'builtin');
+            """, (story_id, user_id))
             if not cursor.fetchone():
-                return False, "文章不存在", None
+                return False, "文章不存在或无权访问", None
+
+            # 唯一键上的写锁串行化同一用户、文章的并发提交。
+            cursor.execute("""
+                INSERT INTO user_story_records (user_id, story_id)
+                VALUES (%s, %s)
+                ON DUPLICATE KEY UPDATE id = id;
+            """, (user_id, story_id))
+            cursor.execute("""
+                SELECT is_completed FROM user_story_records
+                WHERE user_id = %s AND story_id = %s FOR UPDATE;
+            """, (user_id, story_id))
+            if cursor.fetchone()["is_completed"]:
+                return True, "文章已标记为已阅读", {
+                    "story_id": story_id, "is_completed": True
+                }
+
+            cursor.execute("""
+                UPDATE user_story_records
+                SET is_completed = 1, completed_at = COALESCE(completed_at, NOW())
+                WHERE user_id = %s AND story_id = %s;
+            """, (user_id, story_id))
 
             # 累加今日文章阅读数
             cursor.execute("""
@@ -156,7 +197,9 @@ class StoryService:
                     read_story_count = read_story_count + 1;
             """, (user_id, today))
 
-        return True, "文章阅读完成，打卡成功！", {"story_id": story_id}
+        return True, "文章阅读完成，打卡成功！", {
+            "story_id": story_id, "is_completed": True
+        }
 
 
 

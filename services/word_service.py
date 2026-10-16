@@ -733,7 +733,7 @@ class WordService:
                 JOIN words w ON w.id = bw.word_id
                 LEFT JOIN user_word_records uwr 
                     ON uwr.word_id = bw.word_id AND uwr.user_id = %s
-                LEFT JOIN user_favorites uf 
+                LEFT JOIN user_favorite_words uf 
                     ON uf.word_id = bw.word_id AND uf.user_id = %s
                 WHERE {where_sql}
                 ORDER BY bw.word_rank ASC
