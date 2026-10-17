@@ -5,12 +5,12 @@ class AuthService:
     @staticmethod
     def register(username, password):
         """用户注册逻辑"""
-        if not username or not password:
+        if not isinstance(username, str) or not isinstance(password, str) or not username.strip() or not password:
             return False, "用户名和密码不能为空", None
         
         username = username.strip()
-        if len(username) < 3 or len(password) < 6:
-            return False, "用户名至少3位，密码至少6位", None
+        if not 3 <= len(username) <= 50 or len(password) < 6:
+            return False, "用户名须为3到50位，密码至少6位", None
 
         with get_db() as cursor:
             # 检查用户名是否已存在
@@ -37,7 +37,7 @@ class AuthService:
     @staticmethod
     def login(username, password):
         """用户登录逻辑"""
-        if not username or not password:
+        if not isinstance(username, str) or not isinstance(password, str) or not username.strip() or not password:
             return False, "用户名和密码不能为空", None
 
         with get_db() as cursor:

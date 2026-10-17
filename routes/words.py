@@ -14,108 +14,76 @@ def get_learn_group():
         return error_response(msg=msg, code=400)
     return success_response(data=data, msg=msg)
 
+def answer_request(kind):
+    data = request.get_json(silent=True)
+    if not isinstance(data, dict):
+        return error_response(msg="请求体必须为 JSON 对象", code=400)
+    method = WordService.check_learn_answer if kind == 'learn' else WordService.answer_review_word
+    success, msg, result = method(
+        user_id=g.user_id, group_id=data.get('group_id'),
+        word_id=data.get('word_id'), question_id=data.get('question_id'),
+        request_id=data.get('request_id'), selected_key=data.get('selected_key'),
+        is_show_answer=data.get('is_show_answer', False))
+    return success_response(data=result, msg=msg) if success else error_response(msg=msg, code=400)
+
+
 @words_bp.route('/learn/answer', methods=['POST'])
 @login_required
 def check_learn_answer():
-    """1.4 单题提交答案判定与解析获取"""
-    req_data = request.get_json() or {}
-    word_id = req_data.get("word_id")
-    selected_key = req_data.get("selected_key")
-    is_show_answer = req_data.get("is_show_answer", False)
-    options = req_data.get("options", [])  # 前端当前渲染的 A/B/C/D 选项列表
+    return answer_request('learn')
 
-    if not word_id:
-        return error_response(msg="word_id 不能为空", code=400)
-
-    success, msg, data = WordService.check_learn_answer(
-        user_id=g.user_id,
-        word_id=word_id,
-        selected_key=selected_key,
-        is_show_answer=is_show_answer,
-        options=options
-    )
-    if not success:
-        return error_response(msg=msg, code=400)
-    return success_response(data=data, msg=msg)
 
 @words_bp.route('/learn/group/complete', methods=['POST'])
 @login_required
 def complete_learn_group():
-    """1.5 组结清零小结结算与数据入库"""
-    req_data = request.get_json() or {}
-    group_id = req_data.get("group_id")
-    word_mistakes = req_data.get("word_mistakes")
-
-    if not group_id or word_mistakes is None:
-        return error_response(msg="参数缺失: group_id 与 word_mistakes 不能为空", code=400)
-
-    success, msg, data = WordService.complete_learn_group(
-        user_id=g.user_id,
-        group_id=group_id,
-        word_mistakes=word_mistakes
-    )
-    if not success:
-        return error_response(msg=msg, code=400)
-    return success_response(data=data, msg=msg)
+    data = request.get_json(silent=True)
+    if not isinstance(data, dict):
+        return error_response(msg="请求体必须为 JSON 对象", code=400)
+    success, msg, result = WordService.complete_learn_group(g.user_id, data.get('group_id'))
+    return success_response(data=result, msg=msg) if success else error_response(msg=msg, code=400)
 
 
-
+@words_bp.route('/review/queue', methods=['GET'])
 @words_bp.route('/review/group', methods=['GET'])
 @login_required
 def get_review_group():
-    """2.1 获取今日待复习单词组"""
     success, msg, data = WordService.get_review_group(user_id=g.user_id)
-    if not success:
-        return error_response(msg=msg, code=400)
-    return success_response(data=data, msg=msg)
+    return success_response(data=data, msg=msg) if success else error_response(msg=msg, code=400)
+
 
 @words_bp.route('/review/answer', methods=['POST'])
 @login_required
 def answer_review_word():
-    """2.2 复习单题判题与艾宾浩斯更新"""
-    req_data = request.get_json() or {}
-    word_id = req_data.get("word_id")
-    selected_key = req_data.get("selected_key")
-    is_show_answer = req_data.get("is_show_answer", False)
-    options = req_data.get("options", [])
+    return answer_request('review')
 
-    if not word_id:
-        return error_response(msg="word_id 不能为空", code=400)
-
-    success, msg, data = WordService.answer_review_word(
-        user_id=g.user_id,
-        word_id=word_id,
-        selected_key=selected_key,
-        is_show_answer=is_show_answer,
-        options=options
-    )
-    if not success:
-        return error_response(msg=msg, code=400)
-    return success_response(data=data, msg=msg)
 
 @words_bp.route('/review/complete', methods=['POST'])
 @login_required
 def complete_review_group():
-    """2.3 复习组结算归档"""
-    req_data = request.get_json() or {}
-    reviewed_count = req_data.get("reviewed_count", 0)
-
-    success, msg, data = WordService.complete_review_group(
-        user_id=g.user_id,
-        reviewed_count=reviewed_count
-    )
-    if not success:
-        return error_response(msg=msg, code=400)
-    return success_response(data=data, msg=msg)
+    data = request.get_json(silent=True)
+    if not isinstance(data, dict):
+        return error_response(msg="请求体必须为 JSON 对象", code=400)
+    success, msg, result = WordService.complete_review_group(g.user_id, data.get('group_id'))
+    return success_response(data=result, msg=msg) if success else error_response(msg=msg, code=400)
 
 
+@words_bp.route('/master', methods=['POST'])
+@login_required
+def master_word():
+    data = request.get_json(silent=True)
+    if not isinstance(data, dict):
+        return error_response(msg="请求体必须为 JSON 对象", code=400)
+    success, msg, result = WordService.master_word(g.user_id, data.get('word_id'), data.get('group_id'))
+    return success_response(data=result, msg=msg) if success else error_response(msg=msg, code=400)
 
 
 @words_bp.route('/favorite/toggle', methods=['POST'])
 @login_required
 def toggle_favorite():
     """3.1 切换单词收藏状态"""
-    req_data = request.get_json() or {}
+    req_data = request.get_json(silent=True)
+    if not isinstance(req_data, dict):
+        return error_response(msg="请求体必须为JSON对象", code=400)
     word_id = req_data.get("word_id")
     source_type = req_data.get("source_type", "flashcard")
 
@@ -156,7 +124,9 @@ def get_favorite_words():
 @login_required
 def update_daily_target():
     """1.2 修改每日学习目标"""
-    data = request.get_json() or {}
+    data = request.get_json(silent=True)
+    if not isinstance(data, dict):
+        return error_response(msg="请求体必须为JSON对象", code=400)
     task_type = data.get("task_type")
     target_count = data.get("target_count")
 
@@ -176,22 +146,12 @@ def update_daily_target():
 @words_bp.route('/learn/group/practice', methods=['POST'])
 @login_required
 def get_group_practice_questions():
-    """1.6 当堂小结巩固练习题抽取"""
-    data = request.get_json() or {}
-    word_ids = data.get("word_ids", [])
-
-    if not word_ids or not isinstance(word_ids, list):
-        return error_response(msg="word_ids 必须为非空整数列表", code=400)
-
-    success, msg, res_data = WordService.get_group_practice_questions(
-        user_id=g.user_id,
-        word_ids=word_ids
-    )
-    if not success:
-        return error_response(msg=msg, code=400)
-    return success_response(data=res_data, msg=msg)
-
-
+    data = request.get_json(silent=True)
+    if not isinstance(data, dict):
+        return error_response(msg='请求体必须为JSON对象', code=400)
+    success, msg, result = WordService.get_group_practice_questions(
+        g.user_id, data.get('word_ids'), data.get('request_id'), data.get('mode', 'mixed'), data.get('group_id'))
+    return success_response(data=result, msg=msg) if success else error_response(msg=msg, code=400)
 
 
 @words_bp.route('/book/list', methods=['GET'])
@@ -200,8 +160,11 @@ def get_book_words_list():
     """2.5 获取词书总词表列表"""
     book_id = request.args.get('book_id')
     filter_type = request.args.get('filter', 'all')  # all, learned, unlearned
-    page = int(request.args.get('page', 1))
-    page_size = int(request.args.get('page_size', 20))
+    try:
+        page = int(request.args.get('page', 1))
+        page_size = int(request.args.get('page_size', 20))
+    except (TypeError, ValueError):
+        return error_response(msg='page、page_size必须为整数', code=400)
 
     success, msg, res_data = WordService.get_book_words_list(
         user_id=g.user_id,
@@ -215,3 +178,70 @@ def get_book_words_list():
     return success_response(data=res_data, msg=msg)
 
 
+
+
+@words_bp.route('/dashboard/summary', methods=['GET'])
+@login_required
+def get_dashboard_summary():
+    from services.page_service import PageService
+    success, msg, data = PageService.dashboard(g.user_id)
+    return success_response(data=data, msg=msg) if success else error_response(msg=msg, code=400)
+
+
+@words_bp.route('/practice/<session_id>', methods=['GET'])
+@login_required
+def get_independent_practice(session_id):
+    from services.independent_practice_service import IndependentPracticeService
+    success, msg, result = IndependentPracticeService.get(g.user_id, session_id)
+    return success_response(data=result, msg=msg) if success else error_response(msg=msg, code=400)
+
+
+@words_bp.route('/practice/<session_id>/submit', methods=['POST'])
+@login_required
+def submit_independent_practice(session_id):
+    from services.independent_practice_service import IndependentPracticeService
+    data = request.get_json(silent=True)
+    if not isinstance(data, dict):
+        return error_response(msg='请求体必须为JSON对象', code=400)
+    success, msg, result = IndependentPracticeService.submit(g.user_id, session_id, data.get('request_id'), data.get('answers'))
+    return success_response(data=result, msg=msg) if success else error_response(msg=msg, code=400)
+
+
+def change_review_state(action):
+    from services.review_state_service import ReviewStateService
+    data = request.get_json(silent=True)
+    if not isinstance(data, dict):
+        return error_response(msg='请求体必须为JSON对象', code=400)
+    success, msg, result = ReviewStateService.change(g.user_id, data.get('word_id'), action, data.get('request_id'))
+    return success_response(data=result, msg=msg) if success else error_response(msg=msg, code=400)
+
+
+@words_bp.route('/review/pause', methods=['POST'])
+@login_required
+def pause_review_word():
+    return change_review_state('pause')
+
+
+@words_bp.route('/review/resume', methods=['POST'])
+@login_required
+def resume_review_word():
+    return change_review_state('resume')
+
+
+@words_bp.route('/master/reset', methods=['POST'])
+@login_required
+def reset_mastered_word():
+    return change_review_state('reset')
+
+
+@words_bp.route('/review/paused', methods=['GET'])
+@login_required
+def get_paused_review_words():
+    from services.review_state_service import ReviewStateService
+    try:
+        page = int(request.args.get('page', 1))
+        page_size = int(request.args.get('page_size', 20))
+    except ValueError:
+        return error_response(msg='page、page_size必须为整数', code=400)
+    success, msg, result = ReviewStateService.paused_words(g.user_id, page, page_size)
+    return success_response(data=result, msg=msg) if success else error_response(msg=msg, code=400)

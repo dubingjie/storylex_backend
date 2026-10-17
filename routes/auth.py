@@ -8,7 +8,9 @@ auth_bp = Blueprint('auth', __name__, url_prefix='/api/auth')
 @auth_bp.route('/register', methods=['POST'])
 def register():
     """用户注册接口"""
-    data = request.get_json() or {}
+    data = request.get_json(silent=True)
+    if not isinstance(data, dict):
+        return error_response(msg="请求体必须为JSON对象", code=400)
     username = data.get("username")
     password = data.get("password")
 
@@ -20,7 +22,9 @@ def register():
 @auth_bp.route('/login', methods=['POST'])
 def login():
     """用户登录接口"""
-    data = request.get_json() or {}
+    data = request.get_json(silent=True)
+    if not isinstance(data, dict):
+        return error_response(msg="请求体必须为JSON对象", code=400)
     username = data.get("username")
     password = data.get("password")
 

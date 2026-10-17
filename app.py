@@ -6,6 +6,7 @@ from utils.response import success_response, error_response
 from db import get_db
 
 # 导入业务路由蓝图
+from routes.ai import ai_bp
 from routes.auth import auth_bp
 from routes.words import words_bp
 from routes.user import user_bp
@@ -29,6 +30,7 @@ def create_app():
         return error_response(msg=f"服务端异常: {str(e)}", code=500)
 
     # 注册蓝图
+    app.register_blueprint(ai_bp)
     app.register_blueprint(auth_bp)
     app.register_blueprint(words_bp)
     app.register_blueprint(user_bp)

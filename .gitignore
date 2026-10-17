@@ -1,9 +1,12 @@
 # 1. 环境变量与敏感配置
 .env
-.env.local
-.env.*.local
+.env.*
+!.env.example
+!.env.*.example
 *.pem
 *.key
+/.aws/
+/.codex/
 
 # 2. Python 虚拟环境
 venv/
@@ -22,3 +25,38 @@ env/
 .idea/
 .DS_Store
 *.swp
+*.swo
+Thumbs.db
+Desktop.ini
+
+# 5. 测试缓存、覆盖率和本地运行文件
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+.coverage.*
+htmlcov/
+coverage.xml
+*.log
+*.pid
+*.sock
+/logs/
+/tmp/
+/uploads/
+
+# 6. 原始词书、小说语料及本地参考 PDF（保留需求/接口文档和文档配图）
+/data/*.json
+/data/甄嬛传合集.md
+/data/*.pdf
+
+# 7. 数据库备份不上传；保留 migrations/*.sql 供部署和升级
+/backups/
+/dumps/
+*.dump
+*.sql.gz
+*.sql.zip
+
+# 8. Postman 个人环境导出可能包含密码和 Token
+*.postman_environment.json
+# 仅保留项目提供的无凭证环境模板
+!/postman/StoryLex.local.postman_environment.json

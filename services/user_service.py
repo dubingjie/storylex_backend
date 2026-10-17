@@ -1,4 +1,5 @@
-from datetime import datetime, timedelta
+from datetime import timedelta
+from utils.study_time import study_now
 from db import get_db
 
 class UserService:
@@ -24,10 +25,11 @@ class UserService:
                 return False, "用户不存在", None
 
             book_id = user_info["current_book_id"]
-            book_total = user_info["book_total_words"] or 0
+            cursor.execute("SELECT COUNT(*) AS n FROM book_words WHERE book_id = %s", (book_id,))
+            book_total = cursor.fetchone()["n"]
 
             # 2. 查询今日学习统计（新学量、复习量）
-            today = datetime.now().date()
+            today = study_now().date()
             cursor.execute("""
                 SELECT new_learned_count, reviewed_count, read_story_count
                 FROM user_study_stats
@@ -39,12 +41,13 @@ class UserService:
                 "read_story_count": 0
             }
 
-            # 3. 统计当前到期待复习词数（next_review_at <= NOW()）
+            # 3. 统计当前到期待复习词数（next_review_at <= %s）
             cursor.execute("""
                 SELECT COUNT(*) AS pending_review_count
                 FROM user_word_records
-                WHERE user_id = %s AND status != 'mastered' AND next_review_at <= NOW();
-            """, (user_id,))
+                WHERE user_id = %s AND status != 'mastered' AND next_review_at <= %s
+                    AND NOT EXISTS(SELECT 1 FROM review_pauses p WHERE p.user_id = user_word_records.user_id AND p.word_id = user_word_records.word_id);
+            """, (user_id, study_now()))
             pending_review = cursor.fetchone()["pending_review_count"]
 
             # 4. 词库整体掌握分布
@@ -52,9 +55,10 @@ class UserService:
                 SELECT 
                     COUNT(CASE WHEN status = 'mastered' THEN 1 END) AS mastered_count,
                     COUNT(CASE WHEN status IN ('learning', 'reviewing') THEN 1 END) AS learning_count
-                FROM user_word_records
-                WHERE user_id = %s;
-            """, (user_id,))
+                FROM book_words bw
+                JOIN user_word_records r ON r.word_id = bw.word_id AND r.user_id = %s
+                WHERE bw.book_id = %s;
+            """, (user_id, book_id))
             distribution = cursor.fetchone()
             mastered_count = distribution["mastered_count"]
             learning_count = distribution["learning_count"]
@@ -66,7 +70,7 @@ class UserService:
                 FROM user_study_stats
                 WHERE user_id = %s AND (new_learned_count > 0 OR reviewed_count > 0 OR read_story_count > 0)
                 ORDER BY study_date DESC
-                LIMIT 60;
+                ;
             """, (user_id,))
             stat_dates = [row["study_date"] for row in cursor.fetchall()]
 

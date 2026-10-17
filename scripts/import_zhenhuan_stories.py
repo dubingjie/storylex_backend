@@ -1,3 +1,10 @@
+import sys
+from pathlib import Path
+
+# 支持从任意目录直接执行脚本，统一读取项目根目录的 .env。
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+from config import Config
+
 import os
 import re
 import json
@@ -6,12 +13,12 @@ from pymysql.cursors import DictCursor
 
 # 1. 数据库连接配置
 DB_CONFIG = {
-    "host": "localhost",
-    "port": 3306,
-    "user": "root",
-    "password": "147258369",
-    "database": "storylex_db",
-    "charset": "utf8mb4",
+    "host": Config.DB_HOST,
+    "port": Config.DB_PORT,
+    "user": Config.DB_USER,
+    "password": Config.DB_PASSWORD,
+    "database": Config.DB_NAME,
+    "charset": Config.DB_CHARSET,
     "cursorclass": DictCursor,
     "autocommit": False
 }
