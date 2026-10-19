@@ -321,8 +321,44 @@ class StudyService:
             with get_db() as cursor:
                 locked_user(cursor, user_id)
                 group, state = load_group(cursor, user_id, group_id, 'review')
+                receipts_by_word = {}
+                for receipt in state['receipts'].values():
+                    request_input = receipt.get('input') or []
+                    result = receipt.get('data') or {}
+                    if request_input and result:
+                        receipts_by_word[str(request_input[0])] = (request_input, result)
+
+                summary_list = []
+                for word_id, word in state['words'].items():
+                    saved = receipts_by_word.get(str(word.get('word_id', word_id)))
+                    detail = (saved[1].get('word_detail') if saved else None) or word.get('word_detail') or {}
+                    correct_key = saved[1].get('correct_key') if saved else word.get('correct_key')
+                    selected_key = saved[0][2] if saved and len(saved[0]) > 2 else None
+                    is_show_answer = bool(saved and len(saved[0]) > 3 and saved[0][3])
+                    options = word.get('options') or []
+                    correct_text = next((o.get('trans') for o in options if o.get('key') == correct_key), None)
+                    selected_text = next((o.get('trans') for o in options if o.get('key') == selected_key), None)
+                    is_correct = bool(saved and saved[1].get('is_correct'))
+                    skipped = bool(word.get('skipped')) or saved is None
+                    summary_list.append({
+                        'word_id': word.get('word_id', int(word_id)),
+                        'word': word.get('word', detail.get('word', '')),
+                        'trans': translation(detail.get('translations')),
+                        'performance': '已跳过' if skipped else ('答对' if is_correct else ('查看答案' if is_show_answer else '答错')),
+                        'is_correct': is_correct,
+                        'is_skipped': skipped,
+                        'is_show_answer': is_show_answer,
+                        'selected_key': selected_key,
+                        'selected_text': selected_text,
+                        'correct_key': correct_key,
+                        'correct_text': correct_text,
+                        'is_mastered': bool(saved and saved[1].get('new_status') == 'mastered'),
+                        'word_detail': detail,
+                    })
+                reviewed_count = len(receipts_by_word)
                 return True, '复习数量已在答题时统计，此接口不再累加', {
                     'group_id': group_id, 'is_completed': group['status'] == 'completed',
-                    'reviewed_count': len(state['receipts']), 'total': len(state['words'])}
+                    'reviewed_count': reviewed_count, 'total': len(state['words']),
+                    'summary_list': summary_list}
         except StudyError as exc:
             return False, str(exc), None
