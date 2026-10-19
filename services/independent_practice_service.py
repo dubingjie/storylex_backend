@@ -149,6 +149,93 @@ class IndependentPracticeService:
             return False, str(exc), None
 
     @staticmethod
+    def answer(user_id, session_id, request_id, answer):
+        """判定自主练习中的一道题，不触碰正式学习或复习记录。"""
+        try:
+            if not text_id(request_id):
+                raise StudyError('request_id必须为非空字符串（最多64字符）')
+            if not isinstance(answer, dict):
+                raise StudyError('answer必须为JSON对象')
+            normalized = normalize_answers([answer])[0]
+            qid, wid, key, show = normalized
+            with get_db() as c:
+                locked_user(c, user_id)
+                row, state = owned_session(c, user_id, session_id)
+                expected = {q['question_id']: q for q in state['questions']}
+                q = expected.get(qid)
+                if not q:
+                    raise StudyError('question_id不属于此练习')
+                if q['word_id'] != wid:
+                    raise StudyError('word_id与question_id不匹配')
+
+                answers = state.setdefault('question_answers', {})
+                requests = state.setdefault('answer_requests', {})
+                previous_request = requests.get(request_id)
+                if previous_request:
+                    if previous_request['answer'] != normalized:
+                        raise StudyError('request_id已用于其他答案，请使用新的编号')
+                    return True, '返回原题判定结果', previous_request['response']
+
+                previous_answer = answers.get(qid)
+                if previous_answer:
+                    if previous_answer['answer'] != normalized:
+                        raise StudyError('此题已经作答，不能修改答案')
+                    return True, '返回原题判定结果', previous_answer['response']
+                if row['status'] == 'completed':
+                    raise StudyError('练习已完成，不能继续作答')
+                if state.get('submission'):
+                    raise StudyError('此练习已使用整轮提交，不能再逐题作答')
+
+                feedback = {
+                    'session_id': session_id,
+                    'question_id': qid,
+                    'word_id': wid,
+                    'is_correct': not show and key == q['correct_key'],
+                    'correct_key': q['correct_key'],
+                    'selected_key': key,
+                    'is_show_answer': show,
+                    'word_detail': q['word_detail'],
+                }
+                answers[qid] = {'answer': normalized, 'response': feedback}
+                completed = len(answers) == len(expected)
+                response = dict(feedback, completed=completed)
+                result = None
+                if completed:
+                    results = []
+                    for question in state['questions']:
+                        item = answers[question['question_id']]
+                        _, answer_word_id, selected_key, showed = item['answer']
+                        results.append({
+                            'question_id': question['question_id'],
+                            'word_id': answer_word_id,
+                            'question_type': question['question_type'],
+                            'is_correct': not showed and selected_key == question['correct_key'],
+                            'correct_key': question['correct_key'],
+                            'word_detail': question['word_detail'],
+                        })
+                    correct = sum(item['is_correct'] for item in results)
+                    result = {
+                        'session_id': session_id,
+                        'total': len(results),
+                        'correct_count': correct,
+                        'wrong_count': len(results) - correct,
+                        'score': (100 * correct + len(results) // 2) // len(results),
+                        'wrong_word_ids': [item['word_id'] for item in results if not item['is_correct']],
+                        'results': results,
+                    }
+                    state['result'] = result
+                    response['summary'] = result
+                answers[qid]['response'] = response
+                requests[request_id] = {'answer': normalized, 'response': response}
+                status = 'completed' if completed else 'active'
+                c.execute('''UPDATE independent_practice_sessions
+                    SET status = %s, state = %s, completed_at = %s WHERE id = %s''',
+                          (status, json.dumps(state, ensure_ascii=False), study_now() if completed else None, session_id))
+                return True, '本题判定完成', response
+        except StudyError as exc:
+            return False, str(exc), None
+
+    @staticmethod
     def submit(user_id, session_id, request_id, answers):
         try:
             if not text_id(request_id):
@@ -157,6 +244,8 @@ class IndependentPracticeService:
             with get_db() as c:
                 locked_user(c, user_id)
                 row, state = owned_session(c, user_id, session_id)
+                if state.get('question_answers'):
+                    raise StudyError('此练习使用逐题判题，不能再整轮提交')
                 if row['status'] == 'completed':
                     if state['submission']['answers'] != normalized:
                         raise StudyError('练习已结算，不能修改答案；请使用新request_id重新出题')

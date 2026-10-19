@@ -570,7 +570,22 @@ GET /api/stories/list?scope=recommended
 
 - `GET /api/words/practice/<session_id>`，仅本人可访问，返回上述结构。已完成练习可读取原成绩及解析。
 
-##### 5.6.2 提交自主练习
+##### 5.6.2 逐题判定自主练习
+
+- `POST /api/words/practice/<session_id>/answer`，Bearer Token。
+
+```json
+{
+  "request_id":"favorite-answer-001",
+  "answer":{"question_id":"实际题目编号","word_id":101,"selected_key":"A","is_show_answer":false}
+}
+```
+
+- 每次只提交一道题；看答案时使用`is_show_answer=true`、`selected_key=null`。不接受客户端`is_correct`。
+- 服务端立即返回本题`is_correct`、`correct_key`、`word_detail`及`completed`。最后一道题答完时额外返回`summary`，字段与下方整轮提交结果相同；该练习状态改为completed。
+- 每题使用独立request_id；相同request_id和答案重试返回原判题结果，不能改答案或重复作答。答错和看答案均只记入自主练习结果，不改正式复习排程。
+
+##### 5.6.3 整轮提交自主练习（兼容接口）
 
 - `POST /api/words/practice/<session_id>/submit`，Bearer Token。
 
@@ -584,7 +599,7 @@ GET /api/stories/list?scope=recommended
 }
 ```
 
-- 必须一次提交本练习全部题目；selected_key为A/B/C/D；看答案时is_show_answer=true、selected_key=null或省略，按答错处理。不接受客户端is_correct、重复题、其他题或word_id错配。
+- 兼容一次提交本练习全部题目的方式；逐题判题后的练习不能再使用此接口。selected_key为A/B/C/D；看答案时is_show_answer=true、selected_key=null或省略，按答错处理。不接受客户端is_correct、重复题、其他题或word_id错配。
 - 服务端判分（0～100四舍五入整数），返回session_id、total、correct_count、wrong_count、score、wrong_word_ids、results。
 - results每项包含question_id、word_id、question_type、is_correct、correct_key、word_detail；解析包含英文、音标、释义、例句、记忆方法及释义来源词书。
 - 同一练习只结算一次；相同答案重复提交（换request_id或调整答案顺序也一样）返回原结果，改变答案被拒绝。重新练习须重新出题。

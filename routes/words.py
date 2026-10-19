@@ -196,6 +196,18 @@ def get_independent_practice(session_id):
     return success_response(data=result, msg=msg) if success else error_response(msg=msg, code=400)
 
 
+@words_bp.route('/practice/<session_id>/answer', methods=['POST'])
+@login_required
+def answer_independent_practice(session_id):
+    from services.independent_practice_service import IndependentPracticeService
+    data = request.get_json(silent=True)
+    if not isinstance(data, dict):
+        return error_response(msg='请求体必须为JSON对象', code=400)
+    success, msg, result = IndependentPracticeService.answer(
+        g.user_id, session_id, data.get('request_id'), data.get('answer'))
+    return success_response(data=result, msg=msg) if success else error_response(msg=msg, code=400)
+
+
 @words_bp.route('/practice/<session_id>/submit', methods=['POST'])
 @login_required
 def submit_independent_practice(session_id):
