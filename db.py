@@ -1,7 +1,20 @@
+import ssl
+
 import pymysql
 from pymysql.cursors import DictCursor
 from dbutils.pooled_db import PooledDB
 from config import Config
+
+
+def _ssl_context():
+    """DB_SSL 开启时返回加密连接上下文（不校验 CA，适用于 Aiven 等托管库）。"""
+    if Config.DB_SSL:
+        ctx = ssl.create_default_context()
+        ctx.check_hostname = False
+        ctx.verify_mode = ssl.CERT_NONE
+        return ctx
+    return None
+
 
 # 初始化全局连接池
 pool = PooledDB(
@@ -17,8 +30,10 @@ pool = PooledDB(
     database=Config.DB_NAME,
     charset=Config.DB_CHARSET,
     cursorclass=DictCursor,
-    autocommit=False
+    autocommit=False,
+    ssl=_ssl_context()
 )
+
 
 class DBConnection:
     """数据库连接与游标上下文管理器"""
@@ -36,6 +51,7 @@ class DBConnection:
             self.conn.commit()
         self.cursor.close()
         self.conn.close()
+
 
 def get_db():
     """获取上下文管理器实例"""
