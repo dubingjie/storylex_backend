@@ -20,6 +20,14 @@ DB_CONFIG = {
     "cursorclass": DictCursor,
     "autocommit": True
 }
+# 云端托管 MySQL（如 Aiven）强制要求 SSL；DB_SSL=true 时开启加密连接
+if Config.DB_SSL:
+    import ssl as _ssl_module
+    _ssl_ctx = _ssl_module.create_default_context()
+    _ssl_ctx.check_hostname = False
+    _ssl_ctx.verify_mode = _ssl_module.CERT_NONE
+    DB_CONFIG['ssl'] = _ssl_ctx
+
 
 def enrich_all_missing_phonetics():
     conn = pymysql.connect(**DB_CONFIG)
