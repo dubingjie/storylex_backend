@@ -17,9 +17,13 @@ def _ssl_context():
 
 
 # 初始化全局连接池
+# mincached=0：导入时不预建连接。托管 MySQL（如 Aiven 免费实例）会因不活动
+# 自动关机，若启动时就建连接，数据库不可用时进程会直接崩溃并反复重启，
+# 且数据库恢复后也无法自愈；改为懒连接后进程可先正常启动，连接在首次
+# 请求时按需创建，数据库恢复后自动接上，无需人工重启后端。
 pool = PooledDB(
     creator=pymysql,
-    mincached=Config.DB_POOL_MIN_CACHED,
+    mincached=0,
     maxcached=Config.DB_POOL_MAX_CACHED,
     maxconnections=Config.DB_POOL_MAX_CONNECTIONS,
     blocking=True,
